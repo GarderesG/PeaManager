@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h1 style="color:white" >Portfolio performance comparison</h1>
+<hr>
+
+<div class="plotly-app">
+  {% load plotly_dash %}
+  {% plotly_direct name="Dashboard" %}
+</div>
+
+<table class="table table-striped table-hover table-dark">
+  <thead>  
+    <tr>
+      <th>Portfolio</th>
+      <th>1M</th>
+      <th>3M</th>
+      <th>6M</th>
+      <th>YTD</th>
+      <th>1Y</th>
+    </tr>
+  </thead>
+  <tbody class="table-group-divider">
+  {% for ptf in portfolios%}
+    <tr>
+      <td>{{ptf.owner}} -- <a href="{% url 'portfolio' ptf.id %}">{{ptf.name}}</a></td>
+      <td>NA</td>
+      <td>NA</td>
+      <td>NA</td>
+      <td>NA</td>
+      <td>NA</td>
+    </tr>
+
+  {% endfor %}
+  </tbody>
+</table> 
+{% endblock %}

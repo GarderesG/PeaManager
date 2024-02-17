@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+{% load plotly_dash %}
+
+{% plotly_app name="Portfolio" ratio=0.6 initial_arguments=dash_context %}
+
+<h1> {{portfolio.owner}} - {{portfolio.name}}</h1>
+
+ <table>
+  <tr>
+    <th>Product Name</th>
+    <th>Quantity</th>
+    <th>Money Invested</th>
+    <th>PRU</th>
+  </tr>
+
+{% for k,v in curr_inventory.items %}
+
+  <tr>
+    <td>{{k.name}}</td>
+
+    {% for item in v %}
+      <td>{{item}}</td>
+    {% endfor %}    
+  </tr>
+{% endfor %}
+
+ <tr>
+    <td>TOTAL</td>
+    <td></td>
+    <td>{{total_invested}}</td>
+    <td></td>
+  </tr>
+
+
+</table> 
+
+<h1>{{ts}}</h1>
+
+
+{% endblock %}
