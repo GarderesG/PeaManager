@@ -32,10 +32,10 @@ class PortfolioEntry:
 		"""
 		Create Portfolio Entry from an order
 		"""
-		return PortfolioEntry(
-			id_obj= order.id_object, 
-			nb= order.nb_items, 
-			pru= (order.nb_items * order.price + order.total_fee)/order.nb_items
+		return cls(
+			id_obj = order.id_object, 
+			nb = order.nb_items, 
+			pru = (order.nb_items * order.price + order.total_fee)/order.nb_items
 		)
 
 	def update(self, order):
