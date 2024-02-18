@@ -35,15 +35,13 @@ latest_date = min([FinancialData.objects.filter(id_object=stock).latest("date").
 # 7. Background color could change between chart and table (cf. https://github.com/alfonsrv/crypto-tracker)
 
 app = DjangoDash('Dashboard', 
-                 add_bootstrap_links=True,
+                 #add_bootstrap_links=True,
                  external_stylesheets=["static/assets/buttons.css"]
                  )   # replaces dash.Dash
 
 app.layout = html.Div(children=[
     # DB 
     dbc.Container([
-        html.H1("Portfolio performance comparison", style={"color": "white"}),
-        html.Hr(className="my-2", style={"color": "white"}),
         html.P(f"Most recent nav from Yahoo Finance is {latest_date.strftime('%d/%m/%Y')}", className="lead", style={"color": "white"}),
 
         html.Div([

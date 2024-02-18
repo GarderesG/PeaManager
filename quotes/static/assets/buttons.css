@@ -20,7 +20,7 @@
 }
   
 .radio-group .btn-group > .form-check:not(:first-child) > .btn {
-border-top-left-radius: 0;
-border-bottom-left-radius: 0;
-margin-left: -1px;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+	padding-left: -1px;
 }
