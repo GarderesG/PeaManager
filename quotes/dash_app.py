@@ -29,7 +29,6 @@ stocks = portfolio.get_inventory().id_objects
 latest_date = min([FinancialData.objects.filter(id_object=stock).latest("date").date for stock in stocks])
 
 # TO DO:
-# 4. Graph should take more space on the window
 # 5. Fill table with performance
 # 6. A few benchmarks should be available for charting: MSCI France, CAC40, DAX, SP500, Nasdaq100, MSCI World, MSCI China
 # 7. Background color could change between chart and table (cf. https://github.com/alfonsrv/crypto-tracker)
@@ -76,8 +75,9 @@ app.layout = html.Div(children=[
                 html.Div([
                     dmc.DateRangePicker(
                         id="date-range-picker",
-                        minDate=dt.date(2020, 8, 5),
-                        value=[dt.datetime.now().date(), dt.datetime.now().date() + dt.timedelta(days=5)],
+                        minDate=dt.date(2020, 5, 8),
+                        maxDate=dt.datetime.now().date(),
+                        value=[dt.datetime.now().date()+ dt.timedelta(days=-5), dt.datetime.now().date()],
                         style={"width": 300, "right":0, "display": "inline-block"},
                         styles={"color": 'white'}
                     ),
@@ -110,21 +110,26 @@ app.layout = html.Div(children=[
     dash.dependencies.Input('date-range-picker', 'value')
 )
 def update_the_graph(chart_mode: str, btn_1m, btn_3m, btn_6m, btn_ytd, btn_1y, btn_3y, btn_max, date_range, callback_context):
+    """
+    Update the chart when either the buttons, or the daterangepicker is modified.
+    """
+    
     last_modif = None
 
     # Find the last item changed (either new time or new radio item)
     if len(callback_context.triggered):
         last_modif = callback_context.triggered[0]["prop_id"].split(".")[0]
 
-    if last_modif in [None, "radio-chart-mode"]:
-        # First callback or only Prices/returns modif: return right series on max time
+    if last_modif is None:
+        # First callback: return right series on max time
         time_frame = 'max'
 
-    elif last_modif == "date-range-picker":
+    elif last_modif in ["date-range-picker", "radio-chart-mode"]:
+        # Prices/returns modif or change of date
         time_frame = "custom"
     
     else:
-        # Change was on time frame
+        # Change was on time frame (buttons of second row pressed)
         # Find requested time frame
         time_frame = last_modif.split("-")[-1]
 
@@ -134,8 +139,12 @@ def update_the_graph(chart_mode: str, btn_1m, btn_3m, btn_6m, btn_ytd, btn_1y, b
                        custom_dates=date_range)
 
     return chart
-         
+
+
 def timeframe_to_limit_date(time_frame: str) -> dt.date:
+    """
+    From the button pressed (ex. 6m), return the associated start_date assuming the end_date is today.
+    """
     match time_frame:
         case "1m" | "3m" | "6m":
             nb_months = time_frame[0]
@@ -153,8 +162,11 @@ def timeframe_to_limit_date(time_frame: str) -> dt.date:
         case "max":
             return dt.date(2000, 1, 1)
 
+
 def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, custom_dates: list[dt.datetime]) -> go.Figure:
-    
+    """
+    Depending on the price/return series requested, provide the series to chart on the right time frame.
+    """
     if not series_mode in ["Prices", "Returns"]:
         raise Exception("Series_mode parameter is not right: either prices or returns.")
     
@@ -176,9 +188,10 @@ def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, c
     l_traces = []
 
     for i, ts in enumerate(l_ts):
+        # All start from 0% is returns are requested, else the usual series of prices
         chart = go.Scatter(
             x=list(ts.index),
-            y=list((ts/ts.iloc[0]).values -1),
+            y=list(ts.values) if series_mode == "Prices" else list((ts/ts.iloc[0]).values -1),
             name=portfolios[i].owner.name,
             line = {"color": user_colors[portfolios[i].owner.name], "width": 4}
         )
