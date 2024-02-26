@@ -24,9 +24,74 @@ user_colors = {
     "Maman": "darkred"
 }
 
-portfolio = portfolios[0]
-stocks = portfolio.get_inventory().id_objects
-latest_date = min([FinancialData.objects.filter(id_object=stock).latest("date").date for stock in stocks])
+latest_date = FinancialData.get_price_most_recent_date()
+
+def timeframe_to_limit_date(time_frame: str) -> dt.date:
+    """
+    From the button pressed (ex. 6m), return the associated start_date assuming the end_date is today.
+    """
+    match time_frame.lower():
+        case "1m" | "3m" | "6m":
+            nb_months = time_frame[0]
+            start_datetime = dt.datetime.utcnow() - pd.tseries.offsets.DateOffset(months=int(nb_months))
+            return start_datetime.date()
+
+        case "ytd":
+            return dt.datetime(dt.datetime.utcnow().year, 1, 1).date()
+
+        case "1y" | "3y":
+            nb_years = time_frame[0]
+            start_datetime = dt.datetime.utcnow() - pd.tseries.offsets.DateOffset(years=int(nb_years)) 
+            return start_datetime.date()
+
+        case "max":
+            return dt.date(2000, 1, 1)
+
+
+def get_performance_table() -> dbc.Table:
+
+    columns = ["Portfolio", "1M", "3M", "6M", "YTD", "1Y"]
+    header_style = {"background-color": "transparent", "color": "light-blue"}
+    
+    table_header = [
+        html.Thead(html.Tr(
+            [html.Th(col, style=header_style) for col in columns]
+        ))
+    ]
+
+    limit_dates = [timeframe_to_limit_date(tmf) for tmf in columns[1:]]
+    
+    #intersect dates of all portfolios
+    available_dates = list(portfolios[0].ts_val.index)
+    
+    for i, date in enumerate(limit_dates):
+        if not date in available_dates:
+            # Take the closest one before
+            limit_dates[i] = max(d for d in available_dates if d < date)
+
+    rows = []
+
+    # Row headers: hyperlinks to the portfolio
+    row_headers = [html.A(f"{ptf.owner.name} - {ptf.name}", href=f"/portfolio/{ptf.id}") for ptf in portfolios]
+    perfs = [
+        [ptf.ts_cumul_ret[latest_date] / ptf.ts_cumul_ret[limit_date] -1 for limit_date in limit_dates] for ptf in portfolios]
+    
+    for row_header, perf_ptf in zip(row_headers, perfs):
+        rows.append(
+            html.Tr([
+                html.Td(row_header, style={}),
+                *[html.Td("{:.2%}".format(perf), style={}) for perf in perf_ptf]
+            ])
+        ) 
+    
+    table_body = [html.Tbody(rows)]
+
+    return dbc.Table(table_header + table_body, 
+                      hover=True, 
+                      color="dark",
+                      style={"text-align": "center", "border": "none", "background-color": "transparent"},
+                     )
+
 
 # TO DO:
 # 5. Fill table with performance
@@ -34,13 +99,16 @@ latest_date = min([FinancialData.objects.filter(id_object=stock).latest("date").
 # 7. Background color could change between chart and table (cf. https://github.com/alfonsrv/crypto-tracker)
 
 app = DjangoDash('Dashboard', 
-                 #add_bootstrap_links=True,
                  external_stylesheets=["static/assets/buttons.css"]
                  )   # replaces dash.Dash
 
 app.layout = html.Div(children=[
     # DB 
     dbc.Container([
+        
+        html.H1("Portfolio performance comparison", style={"color": "white"}),
+        html.Hr(),
+
         html.P(f"Most recent nav from Yahoo Finance is {latest_date.strftime('%d/%m/%Y')}", className="lead", style={"color": "white"}),
 
         html.Div([
@@ -92,8 +160,11 @@ app.layout = html.Div(children=[
 
         # The Time Series chart
         dcc.Graph(id='graph-ts'),
+        get_performance_table()
     ], fluid=True)
     ], className="bg-dark")
+
+
 
 ##### CALLBACKS
 # Price/Return callback
@@ -141,26 +212,7 @@ def update_the_graph(chart_mode: str, btn_1m, btn_3m, btn_6m, btn_ytd, btn_1y, b
     return chart
 
 
-def timeframe_to_limit_date(time_frame: str) -> dt.date:
-    """
-    From the button pressed (ex. 6m), return the associated start_date assuming the end_date is today.
-    """
-    match time_frame:
-        case "1m" | "3m" | "6m":
-            nb_months = time_frame[0]
-            start_datetime = dt.datetime.utcnow() - pd.tseries.offsets.DateOffset(months=int(nb_months))
-            return start_datetime.date()
 
-        case "ytd":
-            return dt.datetime(dt.datetime.utcnow().year, 1, 1).date()
-
-        case "1y" | "3y":
-            nb_years = time_frame[0]
-            start_datetime = dt.datetime.utcnow() - pd.tseries.offsets.DateOffset(years=int(nb_years)) 
-            return start_datetime.date()
-
-        case "max":
-            return dt.date(2000, 1, 1)
 
 
 def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, custom_dates: list[dt.datetime]) -> go.Figure:
