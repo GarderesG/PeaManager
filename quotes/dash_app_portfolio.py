@@ -1,15 +1,18 @@
+import datetime as dt
+import pandas as pd
+import numpy as np
 import dash
-from dash import dcc, html
+from dash import dcc, html, dash_table
 import plotly.express as px
 import plotly.graph_objects as go
 import dash_bootstrap_components as dbc
 import dash_mantine_components as dmc
 
+from django.core.exceptions import ObjectDoesNotExist
 from django_plotly_dash import DjangoDash
-from quotes.models import Portfolio
+from quotes.models import Portfolio, FinancialData, FinancialObject, Order
 
-import datetime as dt
-import pandas as pd
+from quotes.forms import OrderForm
 
 
 """
@@ -23,13 +26,6 @@ Datatable avec le détail des positions de jour:
 
 Un chart sur le côté avec la déviation de chaque stock par rapport aux poids cibles.
 
-ONGLET ORDERS
-Datatable avec l'ensemble des ordres + form pour rentrer de nouveaux ordres
-
-ONGLET PERFORMANCE ANALYSIS [Creuser sur la gestion de portefeuille]
-    - depuis le début de l'année
-    - depuis le début du portefeuille
-
 AUTRE MENU (pas lié au portefeuille)
     - voir la décomposition du return entre dividende et perf marché
     - voir historique du dividende 
@@ -38,117 +34,335 @@ AUTRE MENU
     - réfléchir à une possibilité de portefeuille modèle Buy and Hold [Futur]
 """
 
+class Colors:
+    dark = "#212529"
+    card_dark = "#2d2d2d"
 
-app = DjangoDash('Portfolio', add_bootstrap_links=True)   # replaces dash.Dash
+def order_tab_layout():
+
+    portfolios = Portfolio.objects.all()
+    financial_objects = FinancialObject.objects.all()
+
+    # Create options for the select boxes
+    portfolio_options = [{'label': str(p), 'value': p.id} for p in portfolios]
+    financial_object_options = [{'label': str(o), 'value': o.id} for o in financial_objects]
+    direction_options = [{'label': 'Buy', 'value': Order.OrderDirection.BUY}, {'label': 'Sell', 'value': Order.OrderDirection.SELL}]
+
+    dropdown_style = {"background-color": Colors.card_dark, "color": "black"}
+    input_style = {"background-color": Colors.card_dark, "color": "white"}
+
+    return html.Div(children=[
+        
+        dbc.Row([
+            dbc.Col(dbc.Label('Portfolio'), width=2),
+            dbc.Col(dcc.Dropdown(id='portfolio', options=portfolio_options, style=dropdown_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Label('Financial Object'), width=2),
+            dbc.Col(dcc.Dropdown(id='id_object', options=financial_object_options, style=dropdown_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Label('Date'), width=2),
+            dbc.Col(dcc.Input(id='date', type='date', style=input_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Label('Direction'), width=2),
+            dbc.Col(dcc.Dropdown(id='direction', options=direction_options, style=dropdown_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Label('Number of Items'), width=2),
+            dbc.Col(dcc.Input(id='nb_items', type='number', style=input_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Label('Price'), width=2),
+            dbc.Col(dcc.Input(id='price', type='number', style=input_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Label('Total Fee'), width=2),
+            dbc.Col(dcc.Input(id='total_fee', type='number', style=input_style), width=10)
+        ]),
+
+        dbc.Row([
+            dbc.Col(dbc.Button('Submit', id='submit-btn', color='primary', n_clicks=0))
+        ]),
+    ], style={'color': 'white'})
+
+def get_order_history(id_portfolio):
+    portfolio = Portfolio.objects.get(id=id_portfolio)
+    orders = Order.objects.filter(portfolio=portfolio).order_by('-date')
+
+    dt_columns = [
+            {'name': 'Date', 'id': 'date'},
+            {'name': 'Instrument Name', 'id': 'id_object'},
+            {'name': 'Direction', 'id': 'direction'},
+            {'name': 'Number of Items', 'id': 'nb_items'},
+            {'name': 'Price', 'id': 'price'},
+            {'name': 'Total Fee', 'id': 'total_fee'},
+        ] 
+
+    #display in a dash_table all orders in database associated with portfolio
+    return dash_table.DataTable(
+        id='order-table',
+        columns=dt_columns,
+        data=[
+            {'date': o.date, 'id_object': o.id_object.name, 'direction': o.direction, 'nb_items': o.nb_items, 'price': o.price, 'total_fee': o.total_fee} 
+            for o in orders
+            ],
+        style_as_list_view=True,
+        style_cell={'backgroundColor': '#2d2d2d', 'color': 'white', "textAlign": "center", 'font-family': 'sans-serif', "lineHeight": "24px"},
+        style_header={'fontWeight': 'bold', 'border': 'none'},
+        filter_action='native',
+        sort_action='native',
+        page_size=10,
+    )
+
+def get_order_card_body(id_portfolio):
+    """
+    This function returns the table of previous orders, and a button to add a new one.
+    """
+    table = get_order_history(id_portfolio)
+    button = dbc.Button("Add a new order", id="btn-add-order", color="primary")
+    modal = dbc.Modal(
+        [
+            dbc.ModalHeader("Add a new order", style={"background-color": "#343a40", "color": "white"}),
+            dbc.ModalBody(order_tab_layout(), style={"background-color": "#343a40", "color": "white"}),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="btn-close-modal", className="ml-auto", n_clicks=0),
+                style={"background-color": "#343a40", "color": "white"}
+            ),
+        ],
+        id="modal",
+        size="lg",
+        is_open=False
+    )
+    return [table, button, modal]
+
+def get_individual_returns(id_portfolio):
+
+    date_range = dmc.Group(
+        spacing="xl",
+        children=[
+            dmc.DatePicker(
+                id="indiv-ret-start-date",
+                label="Start Date",
+                className="label-class text-white",
+
+            ),
+            dmc.DatePicker(
+                id="indiv-ret-end-date",
+                label="End Date",
+                maxDate=dt.datetime.now().date()
+            ),
+        ], 
+    )
+    
+    div_id = html.Div(title=f"{id_portfolio}", id="ptf", hidden=True)
+
+    contrib_graph = dcc.Graph(id='contrib-graph', style={"display": "none"})
+
+    return html.Div(children=[date_range, contrib_graph, div_id])
+
+def performance_overview(id_portfolio):
+    ptf = Portfolio.objects.get(id=id_portfolio)
+    latest_date = FinancialData.get_price_most_recent_date()
+
+    df = ptf.inventory_df()
+    
+    df["Amount Paid"] = df["PRU"] * df["Number"]
+
+    prices = [FinancialData.objects
+              .filter(id_object=id, field="NAV", origin="Yahoo Finance", date=latest_date)
+              .values_list("value", flat=True).first() for id in df["Id"].tolist()]
+    
+    df["Current Value"] = np.multiply(df["Number"], np.array(prices))
+    df.sort_values(by="Current Value", ascending=False, inplace=True)
+
+    df["+/- Value"] = df["Current Value"] - df["Amount Paid"]
+    
+    df["Weight"] = df["Current Value"]/df["Current Value"].sum()
+    df["Weight"] = df["Weight"].map('{:,.1%}'.format)
+    
+    # Formatting
+    numeric_cols = ["PRU", "Amount Paid", "Current Value", "+/- Value"]
+    df[numeric_cols] = df[numeric_cols].map('{:,.2f}'.format)
+    del df["Id"]
+
+    header_style = {"background-color": "#2d2d2d", "color": "white"}
+    row_style = {"color": "white", "background-color": "#2d2d2d"}
+    
+    table_header = [
+        html.Thead(html.Tr([html.Th(col, style=header_style) for col in df.columns]))
+    ]
+    
+    rows = []
+    for item in df.to_dict(orient="records"):
+        rows.append(
+            html.Tr([html.Td(item[col], style=row_style) for col in df.columns])
+        )
+    table_body = [html.Tbody(rows)]
+    table = dbc.Table(table_header + table_body, 
+                      hover=True, 
+                      color="dark",
+                      style={"text-align": "center", "border": "none"},
+                      id="tb",
+                      className="custom-table"
+                     )
+    
+    return table
+
+app = DjangoDash('Portfolio', 
+                 add_bootstrap_links=True,
+                 external_stylesheets=["/static/assets/cards.css", dbc.themes.BOOTSTRAP])   # replaces dash.Dash
 
 app.layout = html.Div(children=[
-    # DB 
     dbc.Container([
-        html.Div(id='pk', title='0'),
+        html.Div(id='pk', title="na"),
         html.H1("Portfolio characteristics", style={"color": "white"}),
         html.Hr(className="my-2", style={"color": "white"}),
         html.P(f"The following tabs provide various tools to dive in the portfolio details.",
          className="lead", style={"color": "white"}),
         html.Div(id='db-price-date', className="lead", style={"color": "white"}),
         
-        dcc.Tabs([
-            dcc.Tab(label="Constituents", children=[
-                
-                html.Div(children=[
-                    dbc.RadioItems(
-                        id="weight-mode", 
-                        value="Static",
-                        class_name="btn-group",
-                        inputClassName="btn-check",
-                        labelClassName="btn btn-outline-secondary",
-                        labelCheckedClassName="active",
-                        options=[
-                                {"label": "Static", "value": "Static"},
-                                {"label": "Dynamic", "value": "Dynamic"},
-                            ],
-                        inline=True),
-                
-                    dmc.DatePicker(
-                            id="date-picker",
-                            label="Date",
-                            minDate=dt.date(2020, 8, 5),
-                            value=dt.datetime.now().date(),
-                            style={"width": 330, "right":0, "display": "inline-block", "float": "right"},
-                        )
-                    ],
-                    style={"display": "flex", "align-items": "flex-end", "justify-content": "space-between"}
+        # Cards with performance and custom css for style
+        dbc.Row([
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardHeader("Current Portfolio Value"), 
+                    dbc.CardBody(id="card-ptf-value")
+                ], class_name="card-darken"),
+            ),
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardHeader("+/- Values"),
+                    dbc.CardBody(id="card-ptf-pnl")
+                ], class_name="card-darken"),
+            ),
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardHeader("Last Updated"),
+                    dbc.CardBody(id="card-last-updated")
+                ], class_name="card-darken"),
+            ),
+        ], id="row-card-override"),
+
+        dbc.Card([
+            dbc.CardHeader(
+                dbc.Tabs([
+                    dbc.Tab(label="Overview", tab_id="overview"),
+                    dbc.Tab(label="Order History", tab_id="orders"),
+                    dbc.Tab(label="Constituent Analysis", tab_id="constituent"),
+                ], 
+                id="tabs", 
+                active_tab="overview", 
+                style={"border": "none", "align-items": "center", "text-transform": "uppercase", "font-size": "14px",
+                        "font-weight": "bold", "color": "darkgray"}
                 ),
-                
-                dcc.Graph(id='chart-weights')
-                ],
-
-                className="nav-item"),
-
-            # See all previous orders, and add one if needed. 
-            dcc.Tab(label="Orders", className="nav-item"),
-
-            dcc.Tab(label="Monthly performance", children=[
-                dcc.Graph(id='chart-monthly')
-                ]),
-
-            dcc.Tab(label="Constituent analyses", children=[
-                html.Div(children=[
-                    #Buttons
-                    html.Div([
-                        dbc.Button(id='btn-horizon-1m', children="1m", color="secondary"),
-                        dbc.Button(id='btn-horizon-3m', children="3m", color="secondary"),
-                        dbc.Button(id='btn-horizon-6m', children="6m", color="secondary"),
-                        dbc.Button(id='btn-horizon-ytd', children="YTD", color="secondary"),
-                        dbc.Button(id='btn-horizon-1y', children="1Y", color="secondary"),
-                        dbc.Button(id='btn-horizon-3y', children="3Y", color="secondary"),
-                        dbc.Button(id='btn-horizon-max', children="Max", color="secondary"),
-                    ], 
-                    style={"float": "left"}
-                    ),
-                
-                    # DateRange Picker
-                    dmc.DateRangePicker(
-                        id="date-range-picker",
-                        label="Date Range",
-                        minDate=dt.date(2020, 8, 5),
-                        value=[dt.datetime.now().date(), dt.datetime.now().date() + dt.timedelta(days=5)],
-                        style={"width": 330, "right":0, "display": "inline-block", "float": "right"},
-                    )],
-                    style={"display": "flex", "align-items": "flex-end", "justify-content": "space-between"} 
-                ),
-            dcc.Graph(id="constituents")
-            ]),
-
-        ]), 
-
+            ),
+            dbc.CardBody(id="essai")
+            ], 
+            id="card-tabs", 
+            style={"border-radius": "15px", "background-color": "#2d2d2d"}
+        ),        
         ],
         fluid=True),
     ],
-    className="bg-dark")
+    className="bg-dark",
+    style={"background": "#2d2d2d"})
+
+
+## Callbacks
+@app.callback(
+    dash.dependencies.Output('essai', 'children'),
+    dash.dependencies.Input('tabs', 'active_tab'),
+    dash.dependencies.State('pk', 'title')
+)
+def display_tab_in_cardbody(active_tab, pk):
+    """
+    Display the content of the active tab in the card body.
+    """
+    print(active_tab)
+    if active_tab == "overview":
+        return performance_overview(pk)
+    
+    elif active_tab == "orders":
+        return get_order_card_body(pk)
+    
+    elif active_tab == "constituent":
+        return get_individual_returns(pk)
+
+@app.callback(
+    dash.dependencies.Output("modal", "is_open"),
+    [dash.dependencies.Input("btn-add-order", "n_clicks"),
+     dash.dependencies.Input("btn-close-modal", "n_clicks")],
+    [dash.dependencies.State("modal", "is_open")],
+)
+def toggle_modal(n1, n2, is_open):
+    """
+    Toggle modal with the button to add a new order.
+    """
+    if n1 or n2:
+        return not is_open
+    return is_open
 
 
 @app.callback(
-    dash.dependencies.Output('chart-weights', 'figure'),
-    dash.dependencies.Output('db-price-date', 'title'),
-    dash.dependencies.Output('constituents', 'figure'),
-    dash.dependencies.Output('date-picker', 'value'),
-    dash.dependencies.Input('pk', 'title'),
-    dash.dependencies.Input('weight-mode', "value")
-    )
-def do_callback(id_portfolio, weight_mode):
-    
-    ptf = Portfolio.objects.get(id=id_portfolio)
-    latest_date = ptf.get_price_most_recent_date()
+    dash.dependencies.Output('submit-btn', 'n_clicks'),
+    [dash.dependencies.Input('portfolio', 'value'),
+     dash.dependencies.Input('id_object', 'value'),
+     dash.dependencies.Input('date', 'value'),
+     dash.dependencies.Input('direction', 'value'),
+     dash.dependencies.Input('nb_items', 'value'),
+     dash.dependencies.Input('price', 'value'),
+     dash.dependencies.Input('total_fee', 'value'),
+     dash.dependencies.Input('submit-btn', 'n_clicks')]
+)
+def submit_form(portfolio_id, id_object_id, date, direction, nb_items, price, total_fee, n_clicks):
+    """
+    Callback to submit a new order in the Orders tab.
+    """
+    if n_clicks > 0:
+        try:
+            portfolio = Portfolio.objects.get(id=portfolio_id)
+            id_object = FinancialObject.objects.get(id=id_object_id)
+        except ObjectDoesNotExist:
+            return 'Invalid portfolio or financial object ID'
 
-    # Update Chart weights
-    if weight_mode == "Static":
-        weights = pd.DataFrame.from_dict(ptf.get_weights(), orient="index", columns=["weights"])
-        weights.sort_values(by="weights", ascending=False, inplace=True)
+        form = OrderForm({
+            'portfolio': portfolio,
+            'id_object': id_object,
+            'date': date,
+            'direction': direction,
+            'nb_items': nb_items,
+            'price': price,
+            'total_fee': total_fee,
+        })
+        if form.is_valid():
+            form.save()
 
-        fig = go.Figure(
-            data = px.bar(weights, orientation="h"),
-        )
-        fig.update_layout(
+@app.callback(
+    dash.dependencies.Output('contrib-graph', 'figure'),
+    dash.dependencies.Output('contrib-graph', 'style'),
+    dash.dependencies.Input('indiv-ret-start-date', 'value'),
+    dash.dependencies.Input('indiv-ret-end-date', 'value'),
+    dash.dependencies.State('ptf', 'title')
+)
+def update_graph(start_date, end_date, id_portfolio):
+    if start_date and end_date:
+        ptf = Portfolio.objects.get(id=id_portfolio)
+        contributions = ptf.get_individual_returns(start_date, end_date)
+
+        # Create a figure from the contributions
+        figure = go.Figure(
+            data=[go.Bar(x=contributions["Total"], y=contributions.index, orientation="h")]
+            )
+
+        figure.update_layout(
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
             font={"color": "white", "size": 14},
@@ -164,46 +378,35 @@ def do_callback(id_portfolio, weight_mode):
             },
 
             showlegend=False
-        )
-    elif weight_mode == "Dynamic":
-        pass
+            )
+        
+        return figure, {"display": "block"}
+    return go.Figure(data=[]), {"display": "none"}
 
 
-    # Update string with price db date
-    string_date = f"Last update of the database loaded prices until {latest_date}"
-    
-    # Update Constituents
-    inventory = ptf.get_inventory(latest_date)
-    rets = [stock.get_perf(start_date=dt.date(dt.datetime.utcnow().year, 1, 2), end_date=latest_date) for stock in inventory.keys()]
-    names = [stock.name for stock in inventory.keys()]
-
-    fig_cons = go.Figure(
-        data = px.bar(x=rets, y=names, orientation="h"),
-    )
-    fig_cons.update_layout(
-    plot_bgcolor='rgba(0,0,0,0)',
-    paper_bgcolor='rgba(0,0,0,0)',
-    font={"color": "white", "size": 14},
-    xaxis={
-        "title": "weights",
-        "categoryorder": "category ascending",
-        "tickformat": ".0%", 
-        "hoverformat": ".1%",
-    },
-    
-    yaxis={
-        "title": "Instrument",
-    },
-
-    showlegend=False
+@app.callback(
+    dash.dependencies.Output('card-ptf-value', 'children'),
+    dash.dependencies.Output('card-ptf-pnl', 'children'),
+    dash.dependencies.Output('card-last-updated', 'children'),
+    dash.dependencies.Input('pk', 'title'),
 )
+def update_cards(id_portfolio: int):
+    """
+    Callback to update the 3 cards with the portfolio value, pnl and last updated date at the
+    top of the page.
+    """
+    ptf = Portfolio.objects.get(id=id_portfolio)
+    latest_date = FinancialData.get_price_most_recent_date()
+    inventory = ptf.get_inventory(latest_date)
 
-    return fig, string_date, fig_cons, dt.datetime(2022, 10, 12)
+    if ptf.ts_val is None:
+        ptf.get_TS()
 
-# @app.callback(
-#     dash.dependencies.Output('constituents', 'figure'),
-#     dash.dependencies.Input('date-range-picker', 'value')
-#     )
-# def update_perf_date_picker(dates_selected):
-#     start, end = [dt.datetime.strptime(date, "%Y-%m-%d") for date in dates_selected]
-#     pass
+    # Portfolio Value
+    ptf_value = ptf.ts_val[latest_date]
+    
+    # Portfolio PnL
+    pnl = ptf_value - np.dot(inventory.nbs, inventory.prus) 
+
+    return f"{ptf_value:,.2f}€", f"{pnl:,.2f}€", latest_date
+
