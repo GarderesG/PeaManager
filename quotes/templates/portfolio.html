@@ -4,40 +4,14 @@
 
 {% load plotly_dash %}
 
-{% plotly_app name="Portfolio" ratio=0.6 initial_arguments=dash_context %}
+{% plotly_app name="Portfolio" ratio=0.8 initial_arguments=dash_context %}
 
-<h1> {{portfolio.owner}} - {{portfolio.name}}</h1>
-
- <table>
-  <tr>
-    <th>Product Name</th>
-    <th>Quantity</th>
-    <th>Money Invested</th>
-    <th>PRU</th>
-  </tr>
-
-{% for k,v in curr_inventory.items %}
-
-  <tr>
-    <td>{{k.name}}</td>
-
-    {% for item in v %}
-      <td>{{item}}</td>
-    {% endfor %}    
-  </tr>
-{% endfor %}
-
- <tr>
-    <td>TOTAL</td>
-    <td></td>
-    <td>{{total_invested}}</td>
-    <td></td>
-  </tr>
-
-
-</table> 
-
-<h1>{{ts}}</h1>
-
+{# Once the iframe is generated, use jQuery to change the background-color of all iframes of the page.#}
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script>
+$(document).ready(function(){
+    $("iframe").contents().find("body").css("background-color", '#212529');
+});
+</script>
 
 {% endblock %}

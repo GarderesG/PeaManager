@@ -20,20 +20,6 @@ def fill_db_with_French_stocks(apps, schema_editor):
 
     FinancialObject.objects.bulk_create(objects)
 
-
-def fill_db_with_account_owners(apps, schema_editor):
-    AccountOwner = apps.get_model("quotes", "AccountOwner")
-    AccountOwner(name="Guillaume").save()
-    AccountOwner(name="Marie").save()
-    AccountOwner(name="Maman").save()
-
-def fill_db_with_portfolios(apps, schema_editor):
-    AccountOwner = apps.get_model("quotes", "Portfolio")
-    Portfolio(owner="Guillaume", name="PEA").save()
-    Portfolio(owner="Marie", name="PEA").save()
-    Portfolio(owner="Maman", name="PEA").save()
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -42,6 +28,4 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(fill_db_with_French_stocks),
-        migrations.RunPython(fill_db_with_account_owners),
-        migrations.RunPython(fill_db_with_portfolios)
     ]
