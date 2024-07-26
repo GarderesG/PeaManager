@@ -33,15 +33,15 @@ def timeframe_to_limit_date(time_frame: str) -> dt.date:
     match time_frame.lower():
         case "1m" | "3m" | "6m":
             nb_months = time_frame[0]
-            start_datetime = dt.datetime.utcnow() - pd.tseries.offsets.DateOffset(months=int(nb_months))
+            start_datetime = dt.datetime.today() - pd.tseries.offsets.DateOffset(months=int(nb_months))
             return start_datetime.date()
 
         case "ytd":
-            return dt.datetime(dt.datetime.utcnow().year, 1, 1).date()
+            return dt.datetime(dt.datetime.today().year, 1, 1).date()
 
         case "1y" | "3y":
             nb_years = time_frame[0]
-            start_datetime = dt.datetime.utcnow() - pd.tseries.offsets.DateOffset(years=int(nb_years)) 
+            start_datetime = dt.datetime.today() - pd.tseries.offsets.DateOffset(years=int(nb_years)) 
             return start_datetime.date()
 
         case "max":
@@ -141,7 +141,7 @@ app.layout = html.Div(children=[
 
                 # DateRangePicker
                 html.Div([
-                    dmc.DateRangePicker(
+                    dmc.DatePicker(
                         id="date-range-picker",
                         minDate=dt.date(2020, 5, 8),
                         maxDate=dt.datetime.now().date(),
