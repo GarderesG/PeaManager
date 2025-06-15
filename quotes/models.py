@@ -13,155 +13,157 @@ from dataclasses import dataclass
 from typing import Self
 
 class FinancialObject(models.Model):
-	
-	class ObjectType(models.TextChoices):
-		STOCK = "Stock"
-		INDEX = "Index"
-		ETF = "ETF"
-		ETFShare = "ETFShare"
+    
+    class ObjectType(models.TextChoices):
+        STOCK = "Stock"
+        INDEX = "Index"
+        ETF = "ETF"
+        ETFShare = "ETFShare"
 
-	name = models.CharField(max_length=100)
-	category = models.CharField(max_length=10, choices=ObjectType.choices)
-	isin = models.CharField(max_length=12)
-	ticker = models.CharField(max_length=12, blank=True, null=True)
+    name = models.CharField(max_length=100)
+    category = models.CharField(max_length=10, choices=ObjectType.choices)
+    isin = models.CharField(max_length=12)
+    ticker = models.CharField(max_length=12, blank=True, null=True)
 
-	def __str__(self):
-		return f"{self.category} - {self.name}"
+    def __str__(self):
+        return f"{self.category} - {self.name}"
 
-	def get_latest_available_nav(self):
-		"""
-		Queries FinancialData table to see until when data has been populated.
-		"""
-		
-		if (FinancialData.objects.filter(id_object=self.id).exists()):
-			return FinancialData.objects.filter(id_object=self.id).order_by("-date").first().date
-		else:
-			return None
+    def get_latest_available_nav(self):
+        """
+        Queries FinancialData table to see until when data has been populated.
+        """
+        
+        if (FinancialData.objects.filter(id_object=self.id).exists()):
+            return FinancialData.objects.filter(id_object=self.id).order_by("-date").first().date
+        else:
+            return None
 
-	def update_nav_and_divs(self):
-		"""
-		Updates time series
-		"""
+    def update_nav_and_divs(self):
+        """
+        Updates time series
+        """
 
-		stock = yf.Ticker(self.ticker)
-		data = []
+        stock = yf.Ticker(self.ticker)
+        data = []
 
-		if self.get_latest_available_nav() == None:
-			# Take everything from YF
-			
-			df = stock.history(period="max")
-			prices: Iterable[tuple[pd.Timestamp, float]] = df["Close"].items() #type: ignore
-			divs: Iterable[tuple[pd.Timestamp, float]] = df["Dividends"][df["Dividends"] != 0].items() #type: ignore
+        if self.get_latest_available_nav() == None:
+            # Take everything from YF
+            
+            df = stock.history(period="max")
+            prices: Iterable[tuple[pd.Timestamp, float]] = df["Close"].items() #type: ignore
+            divs: Iterable[tuple[pd.Timestamp, float]] = df["Dividends"][df["Dividends"] != 0].items() #type: ignore
 
-			for i, price in prices:
-				new = FinancialData(id_object=self, date=i.date(), field="NAV", value=price, origin="Yahoo Finance")
-				data.append(new)
-			FinancialData.objects.bulk_create(data)
-			
-			data = []
-			for i, div in divs:
-				new = FinancialData(id_object=self, date=i.date(), field="Dividends", value=div, origin="Yahoo Finance")
-				data.append(new)
-			FinancialData.objects.bulk_create(data)
+            for i, price in prices:
+                new = FinancialData(id_object=self, date=i.date(), field="NAV", value=price, origin="Yahoo Finance")
+                data.append(new)
+            FinancialData.objects.bulk_create(data)
+            
+            data = []
+            for i, div in divs:
+                new = FinancialData(id_object=self, date=i.date(), field="Dividends", value=div, origin="Yahoo Finance")
+                data.append(new)
+            FinancialData.objects.bulk_create(data)
 
-		else:
-			last_date = self.get_latest_available_nav()
-			df = stock.history(start=dt.datetime.combine(last_date, dt.time.min),
-							   end=dt.datetime.now())
+        else:
+            last_date = self.get_latest_available_nav()
+            if self.isin == "LU1834983477":
+                  last_date = dt.date(2022,1,19)
+            df = stock.history(start=dt.datetime.combine(last_date, dt.time.min),
+                               end=dt.datetime.now())
 
-			if df.shape[0] == 0:
-				# No data
-				print(f"No data for {self.ticker}!")
-				return 
-			
-			prices = list(df["Close"].items()) #type: ignore
-			divs = list(df["Dividends"][df["Dividends"] != 0].items()) #type: ignore
+            if df.shape[0] == 0:
+                # No data
+                print(f"No data for {self.ticker}!")
+                return 
+            
+            prices = list(df["Close"].items()) #type: ignore
+            divs = list(df["Dividends"][df["Dividends"] != 0].items()) #type: ignore
 
-			for i,price in prices:
-				if i.date() == last_date:
-					continue
-				new = FinancialData(id_object=self, date=i.date(), field="NAV", value=price, origin="Yahoo Finance")
-				data.append(new)
+            for i,price in prices:
+                if i.date() == last_date:
+                    continue
+                new = FinancialData(id_object=self, date=i.date(), field="NAV", value=price, origin="Yahoo Finance")
+                data.append(new)
 
-			FinancialData.objects.bulk_create(data)
+            FinancialData.objects.bulk_create(data)
 
-			data = []
-			for i, div in divs:
-				if i.date() == last_date:
-					continue
-				new = FinancialData(id_object=self, date=i.date(), field="Dividends", value=div, origin="Yahoo Finance")
-				data.append(new)
-			FinancialData.objects.bulk_create(data)
+            data = []
+            for i, div in divs:
+                if i.date() == last_date:
+                    continue
+                new = FinancialData(id_object=self, date=i.date(), field="Dividends", value=div, origin="Yahoo Finance")
+                data.append(new)
+            FinancialData.objects.bulk_create(data)
 
 
-	def get_perf(self, start_date, end_date=dt.datetime.today().date()):
-		"""
-		Get Return between 2 dates
-		"""
+    def get_perf(self, start_date, end_date=dt.datetime.today().date()):
+        """
+        Get Return between 2 dates
+        """
 
-		ini_nav = FinancialData.objects.filter(id_object=self, date=start_date, field="NAV", origin="Yahoo Finance").values_list("value", flat=True)
-		end_nav = FinancialData.objects.filter(id_object=self, date=end_date, field="NAV", origin="Yahoo Finance").values_list("value", flat=True)
-		
-		ini_nav = list(ini_nav)[0]
-		end_nav = list(end_nav)[0]
+        ini_nav = FinancialData.objects.filter(id_object=self, date=start_date, field="NAV", origin="Yahoo Finance").values_list("value", flat=True)
+        end_nav = FinancialData.objects.filter(id_object=self, date=end_date, field="NAV", origin="Yahoo Finance").values_list("value", flat=True)
+        
+        ini_nav = list(ini_nav)[0]
+        end_nav = list(end_nav)[0]
 
-		return end_nav / ini_nav -1
+        return end_nav / ini_nav -1
 
 
 class AccountOwner(models.Model):
-	name = models.CharField(max_length=30, unique=True)
+    name = models.CharField(max_length=30, unique=True)
 
-	def __str__(self):
-		return self.name
+    def __str__(self):
+        return self.name
 
 
 @dataclass
 class PortfolioEntry:
-	"""
-	Object for tracking an item of the portfolio inventory.
+    """
+    Object for tracking an item of the portfolio inventory.
 
-	Args:
-		id_obj: FinancialObject on which a position is held
-		nb: number of stocks in the portfolio
-		pru: euro amount at which the stcck needs to be for the overall investment to be worth 0
-	"""
-	fin_obj: "FinancialObject"
-	nb: int
-	pru: float
+    Args:
+        id_obj: FinancialObject on which a position is held
+        nb: number of stocks in the portfolio
+        pru: euro amount at which the stcck needs to be for the overall investment to be worth 0
+    """
+    fin_obj: "FinancialObject"
+    nb: int
+    pru: float
 
-	@classmethod
-	def from_order(cls, order: "Order") -> Self:
-		"""
-		Create Portfolio Entry from an order
-		"""
-		
-		return cls(
-			fin_obj = order.id_object, 
-			nb = order.nb_items, 
-			pru = (order.nb_items * order.price + order.total_fee)/order.nb_items
-		)
+    @classmethod
+    def from_order(cls, order: "Order") -> Self:
+        """
+        Create Portfolio Entry from an order
+        """
+        
+        return cls(
+            fin_obj = order.id_object, 
+            nb = order.nb_items, 
+            pru = (order.nb_items * order.price + order.total_fee)/order.nb_items
+        )
 
-	def update(self, order):
-		"""
-		Update Portfolio Entry attributes with a new order.
-		"""
-		if order.id_object.id == self.fin_obj.id:
-			# We assume the order is on the same Financial Instrument as the PortfolioEntry
-			
-			if order.direction == Order.OrderDirection.BUY:
-				# Update self.nb once pru has been calculated
-				self.pru = (self.pru * self.nb + order.nb_items * order.price + order.total_fee)/(self.nb + order.nb_items)
-				self.nb += order.nb_items
-				
-			else:
-				if self.nb == order.nb_items:
-					# Sell everything
-					self.nb = 0
-					self.pru = 0
-				
-				else:
-					self.pru = (self.pru * self.nb - order.nb_items * order.price + order.total_fee)/ (self.nb - order.nb_items)
-					self.nb -= order.nb_items
+    def update(self, order):
+        """
+        Update Portfolio Entry attributes with a new order.
+        """
+        if order.id_object.id == self.fin_obj.id:
+            # We assume the order is on the same Financial Instrument as the PortfolioEntry
+            
+            if order.direction == Order.OrderDirection.BUY:
+                # Update self.nb once pru has been calculated
+                self.pru = (self.pru * self.nb + order.nb_items * order.price + order.total_fee)/(self.nb + order.nb_items)
+                self.nb += order.nb_items
+                
+            else:
+                if self.nb == order.nb_items:
+                    # Sell everything
+                    self.nb = 0
+                    self.pru = 0
+                
+                else:
+                    self.pru = (self.pru * self.nb - order.nb_items * order.price + order.total_fee)/ (self.nb - order.nb_items)
+                    self.nb -= order.nb_items
 
 
 class PortfolioInventory:
@@ -196,7 +198,7 @@ class PortfolioInventory:
     @property
     def fin_objs(self) -> list[FinancialObject]:
           return [item.fin_obj for item in self.portfolio_entries]
-	
+    
     @property
     def names(self) -> list[str]:
         return [item.fin_obj.name for item in self.portfolio_entries]
@@ -225,7 +227,7 @@ class PortfolioInventory:
 
 
 class Portfolio(models.Model):
-	
+    
     owner = models.ForeignKey(AccountOwner, on_delete=models.CASCADE)
     name = models.CharField(max_length=30, default="")
 
@@ -254,7 +256,7 @@ class Portfolio(models.Model):
     def get_inventory(self, date=dt.datetime.today()) -> PortfolioInventory:
         """
         Given a date, return a list of Portfolio Entries with current inventory.
-        """		
+        """        
         all_orders = self.orders.filter(date__lte=date).order_by("date")
         
         curr_inventory: PortfolioInventory = []
@@ -320,8 +322,8 @@ class Portfolio(models.Model):
             start = all_order_dates[i-1]
             inventory = self.get_inventory(start)
             prices_df = YahooFinanceQuery.get_prices_from_inventory(fin_objs = inventory.fin_objs,
-																 from_date = start,
-																 until_date = order_date)
+                                                                 from_date = start,
+                                                                 until_date = order_date)
 
             # Make inventory a 2d numpy array
             inventory = np.array(inventory.nbs)
@@ -343,7 +345,7 @@ class Portfolio(models.Model):
             weights = amount_per_stock.div(amount_per_stock.sum(axis=1), axis=0)
             
             # Keep rets date index
-            ptf_ret = (rets * weights.set_index(rets.index)).sum(axis=1)		
+            ptf_ret = (rets * weights.set_index(rets.index)).sum(axis=1)        
 
             ts_ret.append(ptf_ret)
 
@@ -409,16 +411,32 @@ class YahooFinanceQuery:
         """
         if not all(isinstance(x, FinancialObject) for x in fin_objs):
               raise TypeError(f"Not a list of Financial Objects:{type(fin_objs[0])}")
+        
+        def query_price_from_db(obj: FinancialObject, from_date: dt.date, until_date: dt.date) -> pd.DataFrame:
+            """
+            Query the database for prices of a single financial object
+            """
+            df = pd.DataFrame(list(
+                FinancialData.objects.filter(id_object=obj.id, field="NAV", origin="Yahoo Finance", date__gte=from_date, date__lte=until_date)
+                .values("date", "value")))
+            
+            if df.empty:
+                  raise ValueError(f"No data for {obj.name} (ISIN is {obj.isin}) between "
+                                   f"{from_date} and {until_date}.")
+            
+            df = df.set_index("date").squeeze().rename(obj.name)
+            return df
 
         # Query prices
-        dfs = [pd.DataFrame(list(
-                FinancialData.objects.filter(id_object=obj.id, field="NAV", origin="Yahoo Finance", date__gte=from_date, date__lte=until_date)
-                .values("date", "value"))) for obj in fin_objs]
+        # dfs = [pd.DataFrame(list(
+        #         FinancialData.objects.filter(id_object=obj.id, field="NAV", origin="Yahoo Finance", date__gte=from_date, date__lte=until_date)
+        #         .values("date", "value"))) for obj in fin_objs]
 
         # Adjust dfs to series with date index and relevant column names 
-        dfs = [df.set_index("date").squeeze().rename(fin_objs[i].name) for i,df in enumerate(dfs)]
+        # dfs = [df.set_index("date").squeeze().rename(fin_objs[i].name) for i,df in enumerate(dfs)]
 
         # To dataframe with ordered index dates
+        dfs = [query_price_from_db(obj, from_date, until_date) for obj in fin_objs]
         prices = dfs[0].to_frame() if len(dfs) == 1 else pd.concat(dfs, axis=1, sort=True)
 
         # For some reason, datetime index unordered (later dates before earlier dates)
@@ -461,20 +479,20 @@ class YahooFinanceQuery:
 
 class Order(models.Model):
 
-	class OrderDirection(models.TextChoices):
-		BUY = "BUY"
-		SELL = "SELL"
+    class OrderDirection(models.TextChoices):
+        BUY = "BUY"
+        SELL = "SELL"
 
-	date = models.DateField()
-	portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="orders")
-	id_object = models.ForeignKey(FinancialObject, on_delete=models.CASCADE)
-	direction = models.CharField(max_length=4, choices=OrderDirection.choices)
-	nb_items = models.IntegerField(default=1)
-	price = models.FloatField(default=100)
-	total_fee = models.FloatField(default=0)
+    date = models.DateField()
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="orders")
+    id_object = models.ForeignKey(FinancialObject, on_delete=models.CASCADE)
+    direction = models.CharField(max_length=4, choices=OrderDirection.choices)
+    nb_items = models.IntegerField(default=1)
+    price = models.FloatField(default=100)
+    total_fee = models.FloatField(default=0)
 
-	def __str__(self):
-		return f"{self.portfolio.owner} | {self.date} | {self.id_object.name} ({self.nb_items})"
+    def __str__(self):
+        return f"{self.portfolio.owner} | {self.date} | {self.id_object.name} ({self.nb_items})"
 
 
 class FinancialData(models.Model):
