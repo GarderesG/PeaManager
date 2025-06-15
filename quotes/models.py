@@ -519,7 +519,7 @@ class FinancialData(models.Model):
         return f"object: {self.id_object}, date: {self.date}, value: {self.value}"
     
     @staticmethod          
-    def get_price_most_recent_date() -> date:
+    def get_price_most_recent_date() -> float:
         """
         Get the second most recent date from price dates, in case all values were not updated to the most recent one
         """
