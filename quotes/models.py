@@ -417,12 +417,16 @@ class YahooFinanceQuery:
             Query the database for prices of a single financial object
             """
             df = pd.DataFrame(list(
-                FinancialData.objects.filter(id_object=obj.id, field="NAV", origin="Yahoo Finance", date__gte=from_date, date__lte=until_date)
+                FinancialData.objects.filter(id_object=obj.id, field="NAV", date__gte=from_date, date__lte=until_date)
                 .values("date", "value")))
             
             if df.empty:
                   raise ValueError(f"No data for {obj.name} (ISIN is {obj.isin}) between "
                                    f"{from_date} and {until_date}.")
+            
+            if obj.id == 255 and from_date == dt.date(2022, 3, 4):
+                ess = df
+                a=1
             
             df = df.set_index("date").squeeze().rename(obj.name)
             return df
@@ -503,6 +507,7 @@ class FinancialData(models.Model):
 
     class DataOrigin(models.TextChoices):
         YF = "Yahoo Finance"
+        PROVIDER = "Provider"
 
     class Meta:
         ordering = ["-date"]
