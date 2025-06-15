@@ -4,7 +4,7 @@ django_stubs_ext.monkeypatch()
 from typing import Iterable
 from django.db import models
 import yfinance as yf
-import datetime as dt
+from datetime import date, datetime, time
 import pandas as pd
 import numpy as np
 import warnings
@@ -67,9 +67,9 @@ class FinancialObject(models.Model):
         else:
             last_date = self.get_latest_available_nav()
             if self.isin == "LU1834983477":
-                  last_date = dt.date(2022,1,19)
-            df = stock.history(start=dt.datetime.combine(last_date, dt.time.min),
-                               end=dt.datetime.now())
+                  last_date = date(2022,1,19)
+            df = stock.history(start=datetime.combine(last_date, time.min),
+                               end=datetime.now())
 
             if df.shape[0] == 0:
                 # No data
@@ -96,7 +96,7 @@ class FinancialObject(models.Model):
             FinancialData.objects.bulk_create(data)
 
 
-    def get_perf(self, start_date, end_date=dt.datetime.today().date()):
+    def get_perf(self, start_date, end_date=datetime.today().date()):
         """
         Get Return between 2 dates
         """
@@ -253,7 +253,7 @@ class Portfolio(models.Model):
           return self.get_inventory().to_df()
 
 
-    def get_inventory(self, date=dt.datetime.today()) -> PortfolioInventory:
+    def get_inventory(self, date=datetime.today()) -> PortfolioInventory:
         """
         Given a date, return a list of Portfolio Entries with current inventory.
         """        
@@ -310,7 +310,7 @@ class Portfolio(models.Model):
             raise Exception("No order data.")
 
         # Add today so that the time series is computed until today
-        all_order_dates.append(dt.datetime.today().date())
+        all_order_dates.append(datetime.today().date())
 
         ts = []
         ts_ret = []
@@ -405,14 +405,14 @@ class Portfolio(models.Model):
 class YahooFinanceQuery:
 
     @staticmethod
-    def get_prices_from_inventory(fin_objs: list[FinancialObject], from_date: dt.date, until_date: dt.date) -> pd.DataFrame:
+    def get_prices_from_inventory(fin_objs: list[FinancialObject], from_date: date, until_date: date) -> pd.DataFrame:
         """
         Queries the database for prices, and returns dataframe (objs x dates)
         """
         if not all(isinstance(x, FinancialObject) for x in fin_objs):
               raise TypeError(f"Not a list of Financial Objects:{type(fin_objs[0])}")
         
-        def query_price_from_db(obj: FinancialObject, from_date: dt.date, until_date: dt.date) -> pd.DataFrame:
+        def query_price_from_db(obj: FinancialObject, from_date: date, until_date: date) -> pd.DataFrame:
             """
             Query the database for prices of a single financial object
             """
@@ -423,10 +423,6 @@ class YahooFinanceQuery:
             if df.empty:
                   raise ValueError(f"No data for {obj.name} (ISIN is {obj.isin}) between "
                                    f"{from_date} and {until_date}.")
-            
-            if obj.id == 255 and from_date == dt.date(2022, 3, 4):
-                ess = df
-                a=1
             
             df = df.set_index("date").squeeze().rename(obj.name)
             return df
@@ -508,6 +504,7 @@ class FinancialData(models.Model):
     class DataOrigin(models.TextChoices):
         YF = "Yahoo Finance"
         PROVIDER = "Provider"
+        FT = "Financial Times"
 
     class Meta:
         ordering = ["-date"]
@@ -522,7 +519,7 @@ class FinancialData(models.Model):
         return f"object: {self.id_object}, date: {self.date}, value: {self.value}"
     
     @staticmethod          
-    def get_price_most_recent_date() -> dt.date:
+    def get_price_most_recent_date() -> date:
         """
         Get the second most recent date from price dates, in case all values were not updated to the most recent one
         """
