@@ -1,9 +1,5 @@
 from django.urls import path, include
-from . import views
-
-from . import dash_app
-from . import dash_app_portfolio
-from . import dash_instrument_comparison
+from quotes import views, dash_app, dash_app_portfolio, dash_instrument_comparison
 
 urlpatterns = [
 	path('', views.home, name="home"),
