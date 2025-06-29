@@ -7,7 +7,7 @@ import dash_mantine_components as dmc
 from django_plotly_dash import DjangoDash
 from quotes.models import Portfolio, FinancialData
 
-import datetime as dt
+from datetime import date, datetime, timedelta
 import pandas as pd
 
 
@@ -26,29 +26,31 @@ user_colors = {
 
 latest_date = FinancialData.get_price_most_recent_date()
 
-def timeframe_to_limit_date(time_frame: str) -> dt.date:
+def timeframe_to_limit_date(time_frame: str) -> date:
     """
     From the button pressed (ex. 6m), return the associated start_date assuming the end_date is today.
     """
     match time_frame.lower():
         case "1m" | "3m" | "6m":
             nb_months = time_frame[0]
-            start_datetime = dt.datetime.today() - pd.tseries.offsets.DateOffset(months=int(nb_months))
+            start_datetime = datetime.today() - pd.tseries.offsets.DateOffset(months=int(nb_months))
             return start_datetime.date()
 
         case "ytd":
-            return dt.datetime(dt.datetime.today().year, 1, 1).date()
+            return datetime(datetime.today().year, 1, 1).date()
 
         case "1y" | "3y":
             nb_years = time_frame[0]
-            start_datetime = dt.datetime.today() - pd.tseries.offsets.DateOffset(years=int(nb_years)) 
+            start_datetime = datetime.today() - pd.tseries.offsets.DateOffset(years=int(nb_years)) 
             return start_datetime.date()
 
         case "max":
-            return dt.date(2000, 1, 1)
+            return date(2000, 1, 1)
 
 
 def get_performance_table() -> dbc.Table:
+
+    global latest_date
 
     columns = ["Portfolio", "1M", "3M", "6M", "YTD", "1Y"]
     header_style = {"background-color": "transparent", "color": "light-blue"}
@@ -143,9 +145,9 @@ app.layout = html.Div(children=[
                 html.Div([
                     dmc.DatePicker(
                         id="date-range-picker",
-                        minDate=dt.date(2020, 5, 8),
-                        maxDate=dt.datetime.now().date(),
-                        value=[dt.datetime.now().date()+ dt.timedelta(days=-5), dt.datetime.now().date()],
+                        minDate=date(2020, 5, 8),
+                        maxDate=datetime.now().date(),
+                        value=[datetime.now().date()+ timedelta(days=-5), datetime.now().date()],
                         style={"width": 300, "right":0, "display": "inline-block"},
                         styles={"color": 'white'}
                     ),
@@ -159,7 +161,7 @@ app.layout = html.Div(children=[
             ),
 
         # The Time Series chart
-        dcc.Graph(id='graph-ts'),
+        dcc.Graph(id='graph-ts', style={'height': '700px', 'width': '100%'}),
         get_performance_table()
     ], fluid=True)
     ], className="bg-dark")
@@ -215,7 +217,7 @@ def update_the_graph(chart_mode: str, btn_1m, btn_3m, btn_6m, btn_ytd, btn_1y, b
 
 
 
-def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, custom_dates: list[dt.datetime]) -> go.Figure:
+def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, custom_dates: list[datetime]) -> go.Figure:
     """
     Depending on the price/return series requested, provide the series to chart on the right time frame.
     """
@@ -224,9 +226,10 @@ def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, c
     
     ts_mode = "ts_val" if series_mode == "Prices" else "ts_cumul_ret"
 
+    print(ts_mode, time_frame, custom_dates)
     # Get relevant series on the adequate time frame
     if time_frame == "custom":
-        start, end = [dt.datetime.strptime(date, "%Y-%m-%d") for date in custom_dates]
+        start, end = [datetime.strptime(date, "%Y-%m-%d") for date in custom_dates]
         l_ts = [
             getattr(ptf, ts_mode)[(start.date() <= getattr(ptf, ts_mode).index) & (getattr(ptf, ts_mode).index <= end.date())]
             for ptf in portfolios]
@@ -326,9 +329,9 @@ def update_date_range_picker(fig: go.Figure):
     in the date picker.
     """
     min_dates = [fig["data"][i]["x"][0] for i in range(0, len(fig["data"]))]
-    min_dates = [dt.datetime.strptime(date, "%Y-%m-%d") for date in min_dates]
+    min_dates = [datetime.strptime(date, "%Y-%m-%d") for date in min_dates]
 
     max_dates = [fig["data"][i]["x"][-1] for i in range(0, len(fig["data"]))]
-    max_dates = [dt.datetime.strptime(date, "%Y-%m-%d") for date in max_dates]
+    max_dates = [datetime.strptime(date, "%Y-%m-%d") for date in max_dates]
 
     return (min(min_dates).date(), max(max_dates).date())
