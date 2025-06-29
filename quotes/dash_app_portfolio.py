@@ -1,4 +1,4 @@
-import datetime as dt
+from datetime import date, datetime, timedelta
 import pandas as pd
 import numpy as np
 import dash
@@ -39,6 +39,9 @@ class Colors:
     card_dark = "#2d2d2d"
 
 def order_tab_layout():
+    """
+    This function returns the layout of the order form when adding a new order. 
+    """
 
     portfolios = Portfolio.objects.all()
     financial_objects = FinancialObject.objects.all()
@@ -94,6 +97,9 @@ def order_tab_layout():
     ], style={'color': 'white'})
 
 def get_order_history(id_portfolio):
+    """
+    This function returns a dash table with the order history of the portfolio 
+    """
     portfolio = Portfolio.objects.get(id=id_portfolio)
     orders = Order.objects.filter(portfolio=portfolio).order_by('-date')
 
@@ -104,6 +110,7 @@ def get_order_history(id_portfolio):
             {'name': 'Number of Items', 'id': 'nb_items'},
             {'name': 'Price', 'id': 'price'},
             {'name': 'Total Fee', 'id': 'total_fee'},
+            {'name': '', 'id': 'delete', 'presentation': 'markdown'}
         ] 
 
     #display in a dash_table all orders in database associated with portfolio
@@ -111,7 +118,13 @@ def get_order_history(id_portfolio):
         id='order-table',
         columns=dt_columns,
         data=[
-            {'date': o.date, 'id_object': o.id_object.name, 'direction': o.direction, 'nb_items': o.nb_items, 'price': o.price, 'total_fee': o.total_fee} 
+            {'date': o.date, 
+            'id_object': o.id_object.name, 
+            'direction': o.direction, 
+            'nb_items': o.nb_items, 
+            'price': o.price, 
+            'total_fee': o.total_fee,
+            'delete': f'[🗑️](#)'} #hyperlink for delete icon 
             for o in orders
             ],
         style_as_list_view=True,
@@ -120,6 +133,7 @@ def get_order_history(id_portfolio):
         filter_action='native',
         sort_action='native',
         page_size=10,
+        row_deletable=True,
     )
 
 def get_order_card_body(id_portfolio):
@@ -220,8 +234,8 @@ app = DjangoDash('Portfolio',
                  add_bootstrap_links=True,
                  external_stylesheets=["/static/assets/cards.css", dbc.themes.BOOTSTRAP])   # replaces dash.Dash
 
-app.layout = html.Div(children=[
-    dbc.Container([
+app.layout = html.Div(children=
+    [
         html.Div(id='pk', title="na"),
         html.H1("Portfolio characteristics", style={"color": "white"}),
         html.Hr(className="my-2", style={"color": "white"}),
@@ -251,12 +265,13 @@ app.layout = html.Div(children=[
             ),
         ], id="row-card-override"),
 
+        # Card with various tabs: Overview and Order History
         dbc.Card([
             dbc.CardHeader(
                 dbc.Tabs([
                     dbc.Tab(label="Overview", tab_id="overview"),
                     dbc.Tab(label="Order History", tab_id="orders"),
-                    dbc.Tab(label="Constituent Analysis", tab_id="constituent"),
+                    #dbc.Tab(label="Constituent Analysis", tab_id="constituent"),
                 ], 
                 id="tabs", 
                 active_tab="overview", 
@@ -264,21 +279,92 @@ app.layout = html.Div(children=[
                         "font-weight": "bold", "color": "darkgray"}
                 ),
             ),
-            dbc.CardBody(id="essai")
+            dbc.CardBody(id="order_details")
             ], 
             id="card-tabs", 
             style={"border-radius": "15px", "background-color": "#2d2d2d"}
         ),        
-        ],
-        fluid=True),
+                
+        dbc.Card([
+            dbc.CardHeader("Constituent Performance"),
+            dbc.CardBody(children=[
+                    # Dates button (left) + DateRangePicker (right)
+                    html.Div([
+                        # Buttons for dates
+                        html.Div([
+                            dbc.Button(id='btn-horizon-1m', children="1m", color="secondary", size="sm"),
+                            dbc.Button(id='btn-horizon-3m', children="3m", color="secondary", size="sm"),
+                            dbc.Button(id='btn-horizon-6m', children="6m", color="secondary", size="sm"),
+                            dbc.Button(id='btn-horizon-ytd', children="YTD", color="secondary", size="sm"),
+                            dbc.Button(id='btn-horizon-1y', children="1Y", color="secondary", size="sm"),
+                            dbc.Button(id='btn-horizon-3y', children="3Y", color="secondary", size="sm"),
+                            dbc.Button(id='btn-horizon-max', children="Max", color="secondary", size="sm"),
+                        ], style={"float": "left"}),
+
+                        # DateRangePicker
+                        html.Div([
+                            dmc.DatePicker(
+                                id="date-range-picker",
+                                minDate=date(2020, 5, 8),
+                                maxDate=datetime.now().date(),
+                                value=[datetime.now().date()+ timedelta(days=-5), datetime.now().date()],
+                                style={"width": 300, "right":0, "display": "inline-block"},
+                                styles={"color": 'white'}
+                            ),
+                        ], style={"float": "right"}),
+                    ], 
+                    style={
+                    "display": "flex",
+                    "align-items": "flex-start",
+                    "justify-content": "space-between"
+                    }),
+
+            # Chart for Individual Returns
+            dcc.Graph(id='contrib-graph', style={"height": "350px", }),
+            ],
+        )],
+        # card style
+        style={"border-radius": "15px", 
+                   "background-color": "#2d2d2d",
+                   "color": "darkgray",
+                   "margin-top": "20px",
+                   "text-transform": "uppercase",
+                   "font-size": "14px",
+                   "font-weight": "bold"},
+        ),
+
+
+        dbc.Card(children=[
+                dbc.CardHeader("Dividends"),
+                dbc.CardBody(
+                    dcc.Graph(id="dividends", style={"height": "350px"})
+                ),
+            ],
+            class_name="card-darken",
+            style={"border-radius": "15px", 
+                   "background-color": "#2d2d2d",
+                   "color": "darkgray",
+                   "margin-top": "20px",
+                   "text-transform": "uppercase",
+                   "font-size": "14px",
+                   "font-weight": "bold"},
+        ),
+
     ],
     className="bg-dark",
-    style={"background": "#2d2d2d"})
+    style={"background": "#2d2d2d",
+           "height": "100vh",
+        "width": "100vw",
+        "padding": "0",
+        "margin": "0",
+        "overflowX": "hidden",
+         "display": "flex",
+    "flexDirection": "column"})
 
 
 ## Callbacks
 @app.callback(
-    dash.dependencies.Output('essai', 'children'),
+    dash.dependencies.Output('order_details', 'children'),
     dash.dependencies.Input('tabs', 'active_tab'),
     dash.dependencies.State('pk', 'title')
 )
@@ -286,7 +372,6 @@ def display_tab_in_cardbody(active_tab, pk):
     """
     Display the content of the active tab in the card body.
     """
-    print(active_tab)
     if active_tab == "overview":
         return performance_overview(pk)
     
@@ -326,7 +411,7 @@ def submit_form(portfolio_id, id_object_id, date, direction, nb_items, price, to
     """
     Callback to submit a new order in the Orders tab.
     """
-    if n_clicks > 0:
+    if n_clicks and n_clicks > 0:
         try:
             portfolio = Portfolio.objects.get(id=portfolio_id)
             id_object = FinancialObject.objects.get(id=id_object_id)
@@ -410,3 +495,12 @@ def update_cards(id_portfolio: int):
 
     return f"{ptf_value:,.2f}€", f"{pnl:,.2f}€", latest_date
 
+
+
+@app.callback(
+    dash.dependencies.Output('db-price-date', 'children'),
+    dash.dependencies.Input('order-table', 'data_previous'),
+    dash.dependencies.State('order-table', 'data')
+)
+def remove_table_row_and_corresponding_object():
+    pass
