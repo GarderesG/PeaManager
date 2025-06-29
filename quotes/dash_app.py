@@ -214,9 +214,6 @@ def update_the_graph(chart_mode: str, btn_1m, btn_3m, btn_6m, btn_ytd, btn_1y, b
     return chart
 
 
-
-
-
 def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, custom_dates: list[datetime]) -> go.Figure:
     """
     Depending on the price/return series requested, provide the series to chart on the right time frame.
@@ -226,7 +223,6 @@ def get_traces(portfolios: list[Portfolio], series_mode: str, time_frame: str, c
     
     ts_mode = "ts_val" if series_mode == "Prices" else "ts_cumul_ret"
 
-    print(ts_mode, time_frame, custom_dates)
     # Get relevant series on the adequate time frame
     if time_frame == "custom":
         start, end = [datetime.strptime(date, "%Y-%m-%d") for date in custom_dates]
